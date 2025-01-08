@@ -61,6 +61,11 @@ active_models = client.models(
 )
 ```
 
+Limitations:
+
+- Cannot create or update a model provider
+- Cannot create or update a model
+
 ## Agents
 
 Create and manage agents:
