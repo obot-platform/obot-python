@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "obot-python"
+version = "0.1.0"
+description = "Python package for interacting with the Obot platform."
+authors = ["sanjay920 <sanjay.nadhavajhala@gmail.com>"]
+readme = "README.md"
+packages = [{include = "obot"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+httpx = "^0.25.0"
+pydantic = "^2.0"
+rich = "^13.0"
+typing-extensions = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0"
+pytest-asyncio = "^0.21.0"
+pytest-cov = "^4.1"
+black = "^23.0"
+isort = "^5.12"
+mypy = "^1.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
