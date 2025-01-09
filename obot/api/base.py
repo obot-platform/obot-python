@@ -1,7 +1,19 @@
-from typing import Any, Dict, Optional, Union, List, TypeVar, Generic
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Union,
+    List,
+    TypeVar,
+    Generic,
+    Iterator,
+    AsyncIterator,
+    Tuple,
+)
 import httpx
 import logging
 from ..exceptions import ObotAPIError, ObotAuthError, ObotConfigError
+from urllib.parse import urljoin
 
 T = TypeVar("T")
 
@@ -15,157 +27,193 @@ class PaginatedResponse(Dict[str, Any]):
 
 
 class BaseAPI:
-    """Base class for making HTTP requests to the Obot API."""
+    """Base class for API endpoints."""
 
     def __init__(
         self,
         base_url: str,
         token: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: Optional[float] = None,
         is_async: bool = True,
+        client: Optional["ObotClient"] = None,  # type: ignore
     ):
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.is_async = is_async
+        """Initialize the API client."""
+        self._base_url = base_url.rstrip("/") + "/"
+        self._token = token
+        self._timeout = timeout
+        self._is_async = is_async
+        self._client = client
+        self._last_response_headers = {}
 
-        # Initialize headers
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
+    def _get_headers(
+        self, additional_headers: Optional[Dict[str, str]] = None
+    ) -> Dict[str, str]:
+        """Get headers with authorization."""
+        headers = {"Accept": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        if additional_headers:
+            headers.update(additional_headers)
+        return headers
 
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+    def _store_headers(self, headers: httpx.Headers) -> None:
+        """Store response headers."""
+        self._last_response_headers = dict(headers.items())
 
-        # Create appropriate client based on sync/async mode
-        if is_async:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                headers=headers,
-                timeout=timeout,
-            )
-        else:
-            self._client = httpx.Client(
-                base_url=self.base_url,
-                headers=headers,
-                timeout=timeout,
-            )
-
-    def _handle_response_sync(self, response: httpx.Response) -> Any:
-        """Handle API response synchronously."""
-
-        try:
-            response_json = response.json()
-        except Exception as e:
-            response_json = None
-
-        if not response.is_success:
-            error_detail = (
-                response_json.get("error") if response_json else response.text
-            )
-
-            if response.status_code == 401:
-                raise ObotAuthError("Authentication failed")
-            elif response.status_code == 403:
-                raise ObotAuthError("Permission denied")
-            else:
-                raise ObotAPIError(
-                    message=f"HTTP {response.status_code} Error: {error_detail}",
-                    status_code=response.status_code,
-                    response_data=response_json,
-                )
-
-        # Handle empty responses
-        if response_json is None:
-            if response.status_code == 204:  # No Content
-                return []
-            return {}
-
-        # If the response is a dict with a data field, return the data
-        if isinstance(response_json, dict) and "data" in response_json:
-            return response_json["data"]
-
-        return response_json
-
-    async def _handle_response_async(self, response: httpx.Response) -> Any:
-        """Handle API response asynchronously."""
-        return self._handle_response_sync(response)
-
-    # Sync methods
-    def get_sync(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def get_sync(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Make a synchronous GET request."""
-        if self.is_async:
-            raise RuntimeError("Cannot use sync methods on async client")
+        with httpx.Client(timeout=self._timeout) as client:
+            resp = client.get(
+                urljoin(self._base_url, path.lstrip("/")),
+                params=params,
+                headers=self._get_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
 
-        full_url = f"{self.base_url}{path}"
+    def post_sync(
+        self,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        data: Optional[Union[str, bytes]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Any:
+        """Make a synchronous POST request."""
+        with httpx.Client(timeout=self._timeout) as client:
+            resp = client.post(
+                urljoin(self._base_url, path.lstrip("/")),
+                json=json,
+                data=data,
+                headers=self._get_headers(headers),
+            )
+            resp.raise_for_status()
+            self._store_headers(resp.headers)
+            return resp.text if data else resp.json()
 
-        response = self._client.get(path, params=params)
-        return self._handle_response_sync(response)
+    def put_sync(
+        self,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        data: Optional[Union[str, bytes]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Make a synchronous PUT request."""
+        with httpx.Client(timeout=self._timeout) as client:
+            resp = client.put(
+                urljoin(self._base_url, path.lstrip("/")),
+                json=json,
+                data=data,
+                headers=self._get_headers(headers),
+            )
+            resp.raise_for_status()
+            return resp.json()
 
-    def post_sync(self, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
-        """Send POST request synchronously."""
-        if self.is_async:
-            raise RuntimeError("Cannot use sync methods on async client")
-        response = self._client.post(path, json=json)
-        return self._handle_response_sync(response)
+    def post_stream_sync(
+        self,
+        path: str,
+        data: Optional[Union[str, bytes]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Iterator[str]:
+        """Make a synchronous streaming POST request."""
+        with httpx.Client(timeout=self._timeout) as client:
+            with client.stream(
+                "POST",
+                urljoin(self._base_url, path.lstrip("/")),
+                data=data,
+                headers=self._get_headers(headers),
+            ) as resp:
+                resp.raise_for_status()
+                for chunk in resp.iter_text():
+                    yield chunk
 
-    def put_sync(self, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
-        """Send PUT request synchronously."""
-        if self.is_async:
-            raise RuntimeError("Cannot use sync methods on async client")
-        response = self._client.put(path, json=json)
-        return self._handle_response_sync(response)
+    async def get(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Make an asynchronous GET request."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(
+                urljoin(self._base_url, path.lstrip("/")),
+                params=params,
+                headers=self._get_headers(),
+            )
+            resp.raise_for_status()
+            return resp.json()
 
-    def delete_sync(self, path: str) -> Any:
-        """Send DELETE request synchronously."""
-        if self.is_async:
-            raise RuntimeError("Cannot use sync methods on async client")
-        response = self._client.delete(path)
-        return self._handle_response_sync(response)
+    async def post(
+        self,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        data: Optional[Union[str, bytes]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Any:
+        """Make an asynchronous POST request."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                urljoin(self._base_url, path.lstrip("/")),
+                json=json,
+                data=data,
+                headers=self._get_headers(headers),
+            )
+            resp.raise_for_status()
+            self._store_headers(resp.headers)
+            return resp.text if data else resp.json()
 
-    # Async methods
-    async def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Send GET request asynchronously."""
-        if not self.is_async:
-            raise RuntimeError("Cannot use async methods on sync client")
-        response = await self._client.get(path, params=params)
-        return await self._handle_response_async(response)
+    async def put(
+        self,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        data: Optional[Union[str, bytes]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Make an asynchronous PUT request."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.put(
+                urljoin(self._base_url, path.lstrip("/")),
+                json=json,
+                data=data,
+                headers=self._get_headers(headers),
+            )
+            resp.raise_for_status()
+            return resp.json()
 
-    async def post(self, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
-        """Send POST request asynchronously."""
-        if not self.is_async:
-            raise RuntimeError("Cannot use async methods on sync client")
-        response = await self._client.post(path, json=json)
-        return await self._handle_response_async(response)
+    def post_stream(
+        self,
+        path: str,
+        data: Optional[Union[str, bytes]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> AsyncIterator[str]:
+        """Make an asynchronous streaming POST request."""
 
-    async def put(self, path: str, json: Optional[Dict[str, Any]] = None) -> Any:
-        """Send PUT request asynchronously."""
-        if not self.is_async:
-            raise RuntimeError("Cannot use async methods on sync client")
-        response = await self._client.put(path, json=json)
-        return await self._handle_response_async(response)
+        async def stream():
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                async with client.stream(
+                    "POST",
+                    urljoin(self._base_url, path.lstrip("/")),
+                    data=data,
+                    headers=self._get_headers(headers),
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_text():
+                        yield chunk
 
-    async def delete(self, path: str) -> Any:
-        """Send DELETE request asynchronously."""
-        if not self.is_async:
-            raise RuntimeError("Cannot use async methods on sync client")
-        response = await self._client.delete(path)
-        return await self._handle_response_async(response)
+        return stream()
 
     def close_sync(self) -> None:
         """Close the HTTP client session synchronously."""
-        if self.is_async:
+        if self._is_async:
             raise RuntimeError("Cannot use sync methods on async client")
         self._client.close()
 
     async def close(self) -> None:
         """Close the HTTP client session asynchronously."""
-        if not self.is_async:
+        if not self._is_async:
             raise RuntimeError("Cannot use async methods on sync client")
         await self._client.aclose()
 
     def __enter__(self):
-        if self.is_async:
+        if self._is_async:
             raise RuntimeError("Use async context manager for async client")
         return self
 
@@ -173,7 +221,7 @@ class BaseAPI:
         self.close_sync()
 
     async def __aenter__(self):
-        if not self.is_async:
+        if not self._is_async:
             raise RuntimeError("Use sync context manager for sync client")
         return self
 

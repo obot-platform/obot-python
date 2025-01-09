@@ -11,6 +11,7 @@ from .api.tools import SyncToolsAPI
 from .api.models import SyncModelsAPI
 from .api.credentials import SyncCredentialsAPI
 from .api.webhooks import SyncWebhooksAPI
+from .api.chat import SyncChatAPI
 
 
 class ObotClient:
@@ -29,14 +30,23 @@ class ObotClient:
         self._token = token
         self._timeout = timeout
 
-        # Initialize API clients
-        self.agents = SyncAgentsAPI(base_url, token=token, timeout=timeout)
-        self.workflows = SyncWorkflowsAPI(base_url, token=token, timeout=timeout)
-        self.threads = SyncThreadsAPI(base_url, token=token, timeout=timeout)
-        self.tools = SyncToolsAPI(base_url, token=token, timeout=timeout)
-        self.models = SyncModelsAPI(base_url, token=token, timeout=timeout)
-        self.credentials = SyncCredentialsAPI(base_url, token=token, timeout=timeout)
-        self.webhooks = SyncWebhooksAPI(base_url, token=token, timeout=timeout)
+        # Initialize API clients with self reference
+        self.agents = SyncAgentsAPI(base_url, token=token, timeout=timeout, client=self)
+        self.workflows = SyncWorkflowsAPI(
+            base_url, token=token, timeout=timeout, client=self
+        )
+        self.threads = SyncThreadsAPI(
+            base_url, token=token, timeout=timeout, client=self
+        )
+        self.tools = SyncToolsAPI(base_url, token=token, timeout=timeout, client=self)
+        self.models = SyncModelsAPI(base_url, token=token, timeout=timeout, client=self)
+        self.credentials = SyncCredentialsAPI(
+            base_url, token=token, timeout=timeout, client=self
+        )
+        self.webhooks = SyncWebhooksAPI(
+            base_url, token=token, timeout=timeout, client=self
+        )
+        self.chat = SyncChatAPI(base_url, token=token, timeout=timeout, client=self)
 
     def close(self) -> None:
         """Close all underlying session clients."""
