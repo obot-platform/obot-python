@@ -195,6 +195,7 @@ class BaseAPI:
                     headers=self._get_headers(headers),
                 ) as resp:
                     resp.raise_for_status()
+                    self._store_headers(resp.headers)
                     async for chunk in resp.aiter_text():
                         yield chunk
 

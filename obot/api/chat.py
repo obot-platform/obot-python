@@ -71,12 +71,19 @@ class ChatAPI(BaseAPI):
         response_text = _extract_message(resp)
 
         if return_conversation:
-            # Get thread ID from response headers
-            new_thread_id = thread_id or self._last_response_headers.get(
-                "X-Obot-Thread-Id"
+            # Get thread ID from response headers (case-insensitive)
+            header_keys = {k.lower(): k for k in self._last_response_headers.keys()}
+            thread_header = header_keys.get("x-obot-thread-id")
+            new_thread_id = thread_id or (
+                self._last_response_headers.get(thread_header)
+                if thread_header
+                else None
             )
+
             if not new_thread_id:
-                raise ValueError("No thread ID found in response headers")
+                raise ValueError(
+                    f"No thread ID found in response headers. Headers: {dict(self._last_response_headers)}"
+                )
 
             return Conversation(
                 agent_id=agent_id,
@@ -131,13 +138,18 @@ class SyncChatAPI(BaseAPI):
         response_text = _extract_message(resp)
 
         if return_conversation:
-            # Get thread ID from response headers
-            new_thread_id = thread_id or self._last_response_headers.get(
-                "x-obot-thread-id"
+            # Get thread ID from response headers (case-insensitive)
+            header_keys = {k.lower(): k for k in self._last_response_headers.keys()}
+            thread_header = header_keys.get("x-obot-thread-id")
+            new_thread_id = thread_id or (
+                self._last_response_headers.get(thread_header)
+                if thread_header
+                else None
             )
+
             if not new_thread_id:
                 raise ValueError(
-                    f"No thread ID found in response headers. Headers: {self._last_response_headers}"
+                    f"No thread ID found in response headers. Headers: {dict(self._last_response_headers)}"
                 )
 
             return Conversation(
