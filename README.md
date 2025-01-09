@@ -25,6 +25,54 @@ client = ObotClient(
 )
 ```
 
+## Chat
+
+The chat interface provides a simple way to interact with agents:
+
+```python
+# Start a conversation
+conv = client.chat("a18pjdh", "Hi there!")
+print(conv)  # prints the agent's response
+
+# Continue the conversation using the same thread
+response = conv.chat("What's 2+2?")
+print(response)
+
+# Stream responses in real-time
+for chunk in conv.chat("Tell me a story", stream=True):
+    print(chunk, end="", flush=True)
+```
+
+### Async Support
+
+For async applications:
+
+```python
+from obot.async_client import AsyncObotClient
+import asyncio
+
+async def main():
+    client = AsyncObotClient(
+        base_url="http://localhost:8080",
+        token="your-token"
+    )
+    
+    # Start a conversation
+    conv = await client.chat("a18pjdh", "Hi there!")
+    print(conv)  # prints response
+    
+    # Continue conversation
+    response = await conv.achat("What's 2+2?")
+    print(response)
+    
+    # Stream responses
+    async for chunk in await conv.achat("Tell me a story", stream=True):
+        print(chunk, end="", flush=True)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
 ## Tools
 
 List all available tools and their categories:
@@ -61,11 +109,6 @@ active_models = client.models(
 )
 ```
 
-Limitations:
-
-- Cannot create or update a model provider
-- Cannot create or update a model
-
 ## Agents
 
 Create and manage agents:
@@ -99,19 +142,19 @@ updated_agent = client.agents.update(
 - When creating or updating agents, model names are automatically converted to model IDs
 - Tool IDs are validated to ensure they exist
 - Updates only modify the specified fields, preserving other settings
+- Chat responses can be streamed in real-time
+- Both synchronous and asynchronous clients are supported
+- Conversations maintain thread context automatically
 
 ## TODO
 
-- Threads API
 - Workflows API
 - Credentials API
 - Webhooks API
-- Async client support
 - Error handling documentation
 - Rate limiting
 - Pagination support
 - OAuth support
-- Streaming responses
 - CLI tool
 - Type hints documentation
 - More examples and use cases
