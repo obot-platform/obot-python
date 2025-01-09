@@ -12,8 +12,14 @@ from typing import (
 )
 import httpx
 import logging
-from ..exceptions import ObotAPIError, ObotAuthError, ObotConfigError
+from ..exceptions import (
+    ObotAPIError,
+    ObotAuthError,
+    ObotConfigError,
+    AgentNotFoundError,
+)
 from urllib.parse import urljoin
+from httpx import HTTPStatusError
 
 T = TypeVar("T")
 
@@ -73,6 +79,19 @@ class BaseAPI:
             resp.raise_for_status()
             return resp.json()
 
+    def _handle_error(self, error: HTTPStatusError, context: str = "") -> None:
+        """Handle HTTP errors and raise appropriate exceptions."""
+        if error.response.status_code == 404 and "invoke" in str(error.request.url):
+            agent_id = str(error.request.url).split("/")[-1]
+            raise AgentNotFoundError(agent_id)
+
+        message = f"API request failed: {context}" if context else "API request failed"
+        raise ObotAPIError(
+            message=message,
+            status_code=error.response.status_code,
+            response_text=error.response.text,
+        )
+
     def post_sync(
         self,
         path: str,
@@ -81,16 +100,21 @@ class BaseAPI:
         headers: Optional[Dict[str, str]] = None,
     ) -> Any:
         """Make a synchronous POST request."""
-        with httpx.Client(timeout=self._timeout) as client:
-            resp = client.post(
-                urljoin(self._base_url, path.lstrip("/")),
-                json=json,
-                data=data,
-                headers=self._get_headers(headers),
-            )
-            resp.raise_for_status()
-            self._store_headers(resp.headers)
-            return resp.text if data else resp.json()
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                resp = client.post(
+                    urljoin(self._base_url, path.lstrip("/")),
+                    json=json,
+                    data=data,
+                    headers=self._get_headers(headers),
+                )
+                resp.raise_for_status()
+                self._store_headers(resp.headers)
+                return resp.text if data else resp.json()
+        except httpx.HTTPStatusError as e:
+            self._handle_error(e)
+        except httpx.RequestError as e:
+            raise ObotAPIError(f"Request failed: {str(e)}", status_code=0)
 
     def put_sync(
         self,
@@ -149,16 +173,21 @@ class BaseAPI:
         headers: Optional[Dict[str, str]] = None,
     ) -> Any:
         """Make an asynchronous POST request."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                urljoin(self._base_url, path.lstrip("/")),
-                json=json,
-                data=data,
-                headers=self._get_headers(headers),
-            )
-            resp.raise_for_status()
-            self._store_headers(resp.headers)
-            return resp.text if data else resp.json()
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    urljoin(self._base_url, path.lstrip("/")),
+                    json=json,
+                    data=data,
+                    headers=self._get_headers(headers),
+                )
+                resp.raise_for_status()
+                self._store_headers(resp.headers)
+                return resp.text if data else resp.json()
+        except httpx.HTTPStatusError as e:
+            self._handle_error(e)
+        except httpx.RequestError as e:
+            raise ObotAPIError(f"Request failed: {str(e)}", status_code=0)
 
     async def put(
         self,
